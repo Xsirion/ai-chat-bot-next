@@ -12,7 +12,7 @@ A modern, intelligent chat application built with Next.js and powered by OpenAI'
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Xsirion/ai-chat-bot-next
    cd ai-chat-bot
    ```
 
