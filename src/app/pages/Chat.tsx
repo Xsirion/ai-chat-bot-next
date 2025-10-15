@@ -6,8 +6,6 @@ import { useAuth } from "@/app/contexts/AuthContext";
 import { MessageSquare, Send, User, Paperclip, Mic, MicOff, LogOut } from "lucide-react";
 import { ChatMessage } from "@/app/components/chat/ChatMessage";
 import { FilePreview } from "@/app/components/chat/FilePreview";
-import { streamText } from "ai";
-import { getOpenAIClient } from "@/app/api/chat/openai";
 import { useToast } from "@/app/hooks/use-toast";
 
 interface Message {
@@ -16,7 +14,7 @@ interface Message {
   content: string;
   file?: { name: string; type: string; url: string };
 }
-
+  
 export default function Chat() {
   const { user, logout } = useAuth();
   const navigate = useRouter();
@@ -99,111 +97,190 @@ export default function Chat() {
 
   const handleSend = async () => {
     if ((!input.trim() && !selectedFile) || isLoading) return;
-
+  
     let fileData: { name: string; type: string; url: string } | undefined;
-    let base64Data: string | undefined;
-
+    let processedMessages = [...messages];
+  
     if (selectedFile) {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(selectedFile);
-      });
-
-      try {
-        base64Data = await base64Promise;
-        fileData = {
-          name: selectedFile.name,
-          type: selectedFile.type,
-          url: URL.createObjectURL(selectedFile),
-        };
-      } catch {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to process file",
+      if (selectedFile.type.startsWith("image/")) {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(selectedFile);
         });
-        return;
+  
+        try {
+          const base64Data = await base64Promise;
+          fileData = {
+            name: selectedFile.name,
+            type: selectedFile.type,
+            url: URL.createObjectURL(selectedFile),
+          };
+  
+          const userMessage: Message = {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: input.trim() || "Analyze this image",
+            file: fileData,
+          };
+  
+          setMessages((prev) => [...prev, userMessage]);
+          setInput("");
+          setSelectedFile(null);
+          setIsLoading(true);
+  
+          const apiMessages = [
+            ...messages.map(m => ({
+              role: m.role,
+              content: m.content,
+            })),
+            {
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: userMessage.content },
+                { type: "image" as const, image: base64Data },
+              ],
+            },
+          ];
+  
+          await sendToAPI(apiMessages as { role: string; content: string }[]);
+          return;
+        } catch {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to process image",
+          });
+          return;
+        }
+      } else {
+        const reader = new FileReader();
+        const textPromise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsText(selectedFile);
+        });
+  
+        try {
+          const fileContent = await textPromise;
+          fileData = {
+            name: selectedFile.name,
+            type: selectedFile.type,
+            url: URL.createObjectURL(selectedFile),
+          };
+  
+          const userMessage: Message = {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: input.trim() || `Uploaded file: ${selectedFile.name}`,
+            file: fileData,
+          };
+  
+          setMessages((prev) => [...prev, userMessage]);
+          setInput("");
+          setSelectedFile(null);
+          setIsLoading(true);
+  
+          const apiMessages = [
+            ...messages.map(m => ({
+              role: m.role,
+              content: m.content,
+            })),
+            {
+              role: "user" as const,
+              content: `${userMessage.content}\n\nFile content:\n${fileContent}`,
+            },
+          ];
+  
+          await sendToAPI(apiMessages);
+          return;
+        } catch {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to read file content",
+          });
+          return;
+        }
       }
+    } else {
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: input.trim(),
+      };
+      processedMessages = [...messages, userMessage];
+      setMessages((prev) => [...prev, userMessage]);
     }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input.trim() || "Attached file",
-      file: fileData,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+  
     setInput("");
     setSelectedFile(null);
     setIsLoading(true);
-
+  
+    const apiMessages = processedMessages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+  
+    await sendToAPI(apiMessages);
+  };
+  
+  const sendToAPI = async (apiMessages: { role: string; content: string }[]) => {
     try {
-      const openai = getOpenAIClient();
-      
-      const apiMessages = [...messages, userMessage].map(m => {
-
-        if (m.role === "user" && m.file) {
-          const isImage = m.file.type.startsWith("image/");
-          
-          if (isImage && base64Data) {
-            return {
-              role: m.role,
-              content: [
-                { type: "text" as const, text: m.content },
-                { type: "image" as const, image: base64Data },
-              ],
-            };
-          } else {
-            // For non-image files, just include the text
-            return {
-              role: m.role,
-              content: `${m.content}\n[File attached: ${m.file.name}]`,
-            };
-          }
-        }
-        
-        return {
-          role: m.role,
-          content: m.content,
-        };
+      const formattedMessages = apiMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+  
+      console.log('Sending to API:', formattedMessages);
+  
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: formattedMessages,
+        }),
       });
-      
-      const result = streamText({
-        model: openai("gpt-4o-mini"),
-        messages: apiMessages,
-      });
-
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get AI response');
+      }
+  
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+  
+      const assistantId = crypto.randomUUID();
       let assistantContent = "";
-      const assistantId = (Date.now() + 1).toString();
-
-      for await (const chunk of result.textStream) {
+  
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: "assistant" as const, content: "" },
+      ]);
+  
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+  
+        const chunk = new TextDecoder().decode(value);
         assistantContent += chunk;
-        
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage?.id === assistantId) {
-            return prev.map((m) =>
-              m.id === assistantId ? { ...m, content: assistantContent } : m
-            );
-          } else {
-            return [
-              ...prev,
-              { id: assistantId, role: "assistant" as const, content: assistantContent },
-            ];
-          }
-        });
+  
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: assistantContent } : m
+          )
+        );
       }
     } catch (error: unknown) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to get AI response. Please check your API key.",
+        description: error instanceof Error ? error.message : "Failed to get AI response.",
       });
     } finally {
       setIsLoading(false);
