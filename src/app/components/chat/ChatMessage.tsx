@@ -1,4 +1,3 @@
-// import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Bot, User } from "lucide-react";
 import { cn } from "../../api/chat/utils";
 
@@ -14,21 +13,17 @@ export function ChatMessage({ message }: { message: Message }) {
 
   return (
     <div className={cn("flex gap-4", isUser ? "flex-row-reverse" : "flex-row")}>
-      {/* <Avatar className="w-10 h-10 border-2 border-primary/20"> */}
+      <div className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-primary/20">
         {isUser ? (
-          <>
-            {/* <AvatarFallback className="bg-primary text-primary-foreground"> */}
-              <User className="w-5 h-5" />
-            {/* </AvatarFallback> */}
-          </>
+          <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+            <User className="w-5 h-5" />
+          </div>
         ) : (
-          <>
-            {/* <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground"> */}
-              <Bot className="w-5 h-5" />
-            {/* </AvatarFallback> */}
-          </>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent text-primary-foreground flex items-center justify-center">
+            <Bot className="w-5 h-5" />
+          </div>
         )}
-      {/* </Avatar> */}
+      </div>
 
       <div className={cn("flex-1 space-y-2", isUser ? "items-end" : "items-start")}>
         <div
